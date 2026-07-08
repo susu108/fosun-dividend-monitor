@@ -40,6 +40,7 @@ def BuildUnpublishedMarkdown(years: list[str]) -> tuple[str, str]:
     markdown_text: str = (
         "### ⏳ 未公布\n"
         f"- 当前年份选项：`{', '.join(years)}`\n"
+        f"- 查询入口：[复星保德信官网红利实现率查询页]({TARGET_URL})\n"
         "- 建议：保持关注，后续将自动更新通知。\n"
     )
     return title, markdown_text
