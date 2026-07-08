@@ -15,6 +15,7 @@ from dataclasses import dataclass
 from typing import Final
 
 import requests
+from playwright.sync_api import Locator
 from playwright.sync_api import Page
 from playwright.sync_api import TimeoutError as PlaywrightTimeoutError
 from playwright.sync_api import sync_playwright
@@ -161,24 +162,84 @@ def FetchDividendYears(target_url: str, timeout_seconds: int) -> list[str]:
             page.wait_for_load_state("networkidle", timeout=timeout_ms)
             _OpenYearDropdown(page, timeout_ms)
 
-            option_locator = page.locator(
-                "[role='listbox'] [role='option'], li.el-select-dropdown__item, div.el-select-dropdown__item"
-            )
-            option_locator.first.wait_for(timeout=timeout_ms)
-            option_count: int = option_locator.count()
-            if option_count <= 0:
-                raise RuntimeError("已展开下拉框，但未找到任何年份选项。")
+            # 页面中可能同时存在多个下拉框（例如：产品下拉 + 分红年度下拉）。
+            # 因此先找“包含最多年份（20xx）文本”的下拉容器，再对该容器滚动加载并提取年份。
+            dropdowns = page.locator("div.el-select-dropdown")
+            dropdown_count: int = dropdowns.count()
+            if dropdown_count <= 0:
+                raise RuntimeError("已展开下拉框，但未找到任何下拉容器。")
 
-            years: list[str] = []
-            for index in range(option_count):
-                text: str = option_locator.nth(index).inner_text(timeout=timeout_ms).strip()
-                if re.fullmatch(r"\d{4}", text):
-                    years.append(text)
+            year_re = re.compile(r"(20\d{2})")
 
-            dedup_years: list[str] = list(dict.fromkeys(years))
-            if not dedup_years:
-                raise RuntimeError("下拉选项存在，但未解析出任何 4 位年份。")
-            return dedup_years
+            def _ExtractYearsFromDropdown(dropdown: Locator) -> list[str]:
+                # 使用文本搜索而非 fullmatch，避免 DOM 文本带有额外字符。
+                items = dropdown.locator("li.el-select-dropdown__item")
+                if items.count() <= 0:
+                    return []
+                raw_texts: list[str] = items.all_inner_texts()
+                found: list[str] = []
+                for text in raw_texts:
+                    match = year_re.search(text)
+                    if match is not None:
+                        found.append(match.group(1))
+                return list(dict.fromkeys(found))
+
+            best_years: list[str] = []
+            best_dropdown_idx: int | None = None
+
+            for idx in range(dropdown_count):
+                candidate = dropdowns.nth(idx)
+                years_found: list[str] = _ExtractYearsFromDropdown(candidate)
+                if len(years_found) > len(best_years):
+                    best_years = years_found
+                    best_dropdown_idx = idx
+
+            if best_dropdown_idx is None or not best_years:
+                # 兜底：直接在页面所有下拉 item 里搜索年份（但可能受虚拟滚动影响）
+                all_items = page.locator("li.el-select-dropdown__item")
+                if all_items.count() <= 0:
+                    raise RuntimeError("已展开下拉框，但未找到任何下拉选项。")
+                raw_texts = all_items.all_inner_texts()
+                years: list[str] = []
+                for text in raw_texts:
+                    match = year_re.search(text)
+                    if match is not None:
+                        years.append(match.group(1))
+                dedup_years: list[str] = list(dict.fromkeys(years))
+                if not dedup_years:
+                    raise RuntimeError("下拉选项存在，但未解析出任何 4 位年份。")
+                return dedup_years
+
+            dropdown_root = dropdowns.nth(best_dropdown_idx)
+            # 注意：有些下拉 DOM 可能存在但不一定处于 visible 状态（例如被遮挡），
+            # 这里等待的是 attached 而不是 visible。
+            dropdown_root.wait_for(state="attached", timeout=timeout_ms)
+
+            wrap = dropdown_root.locator("div.el-select-dropdown__wrap").first
+            if wrap.count() <= 0:
+                # 某些情况下年份选项已经在 DOM 中完整渲染，此时无需滚动。
+                return best_years
+
+            # 虚拟滚动：向下滚动直到年份数量不再增长。
+            last_count: int = len(best_years)
+            for _ in range(10):
+                if wrap.count() > 0:
+                    wrap.evaluate("el => { el.scrollTop = el.scrollHeight; }")
+                    page.wait_for_timeout(250)
+                else:
+                    break
+
+                current_years: list[str] = _ExtractYearsFromDropdown(dropdown_root)
+                if len(current_years) > last_count:
+                    best_years = current_years
+                    last_count = len(current_years)
+                    continue
+                if last_count > 0:
+                    break
+
+            if not best_years:
+                raise RuntimeError("分红年度下拉容器已加载，但未解析到任何年份。")
+            return best_years
         except PlaywrightTimeoutError as exc:
             raise RuntimeError(f"页面加载或元素等待超时：{exc}") from exc
         finally:
