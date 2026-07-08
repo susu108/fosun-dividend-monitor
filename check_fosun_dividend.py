@@ -33,6 +33,31 @@ class DingTalkSign:
     sign: str
 
 
+def BuildUnpublishedMarkdown(years: list[str]) -> tuple[str, str]:
+    """构建“未公布”弱提醒的标题与 markdown 内容。"""
+    # 弱提醒：信息量较少、语气更平缓，避免刷屏焦虑。
+    title: str = "⏳ 复星保德信2026年度红利实现率：未公布（弱提醒）"
+    markdown_text: str = (
+        "### ⏳ 未公布\n"
+        f"- 当前年份选项：`{', '.join(years)}`\n"
+        "- 建议：保持关注，后续将自动更新通知。\n"
+    )
+    return title, markdown_text
+
+
+def BuildPublishedMarkdown() -> tuple[str, str]:
+    """构建“已公布”强提醒的标题与 markdown 内容。"""
+    # 强提醒：更醒目的标题 + 明确结论 + 附官网入口链接。
+    title: str = "✅ 已公布！复星保德信2026年度红利实现率（强提醒）"
+    markdown_text: str = (
+        "## ✅ 已公布\n"
+        "- 已检测到“分红年度”下拉选项包含：`2026`\n"
+        f"- 查询入口：[复星保德信官网红利实现率查询页]({TARGET_URL})\n"
+        "- 下一步：请尽快查看对应产品的红利实现率披露内容。\n"
+    )
+    return title, markdown_text
+
+
 def BuildDingTalkSign(secret: str) -> DingTalkSign:
     """生成钉钉机器人加签参数。"""
     timestamp: str = str(round(time.time() * 1000))
@@ -183,22 +208,11 @@ def Main() -> int:
         logging.info("当前下拉框年份选项：%s", years)
 
         if EvaluatePublication(years, TARGET_YEAR):
-            title: str = "✅ 复星保德信2026年度红利实现率已公布"
-            markdown_text: str = (
-                "### ✅ 复星保德信2026年度红利实现率已公布\n"
-                f"- 检测到分红年度选项包含 `{TARGET_YEAR}`\n"
-                f"- 查询入口：{TARGET_URL}\n"
-            )
+            title, markdown_text = BuildPublishedMarkdown()
             SendDingTalk(webhook, secret, title, markdown_text)
             logging.info("已发送“已公布”通知。")
         else:
-            title = "⏳ 复星保德信2026年度红利实现率尚未公布"
-            markdown_text = (
-                "### ⏳ 复星保德信2026年度红利实现率尚未公布\n"
-                f"- 当前年份选项：`{', '.join(years)}`\n"
-                f"- 查询入口：{TARGET_URL}\n"
-            )
-            # 如不想每天接收“未公布”消息，可注释下一行。
+            title, markdown_text = BuildUnpublishedMarkdown(years)
             SendDingTalk(webhook, secret, title, markdown_text)
             logging.info("已发送“未公布”通知。")
 
