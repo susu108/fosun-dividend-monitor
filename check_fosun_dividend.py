@@ -80,24 +80,40 @@ def SendDingTalk(webhook: str, secret: str | None, title: str, markdown_text: st
 
 def _OpenYearDropdown(page: Page, timeout_ms: int) -> None:
     """展开分红年度下拉框，兼容多个可能选择器。"""
-    selectors: Sequence[str] = (
-        "div.el-form-item:has-text('分红年度') .el-select .el-input__wrapper",
-        "div.el-form-item:has-text('分红年度') .el-select .el-input",
+    candidates: Sequence[str] = (
+        "xpath=//label[contains(normalize-space(.),'分红年度')]/following::*[contains(@class,'el-select')][1]//input",
+        "xpath=//*[contains(@class,'el-form-item')][.//*[contains(normalize-space(.),'分红年度')]]"
+        "//*[contains(@class,'el-select')]//input",
+        "div.el-form-item:has-text('分红年度') .el-select input",
         "input[placeholder*='分红年度']",
-        "div.el-select:has(input[placeholder*='分红']) .el-input__wrapper",
+        "div.el-select input[role='combobox']",
     )
+
     last_error: Exception | None = None
-    for selector in selectors:
+    found_any: bool = False
+
+    for selector in candidates:
         locator = page.locator(selector)
-        count: int = locator.count()
+        try:
+            count: int = locator.count()
+        except Exception as exc:  # noqa: BLE001
+            last_error = exc
+            continue
+
         if count <= 0:
             continue
+
+        found_any = True
         try:
-            locator.first.click(timeout=timeout_ms)
-            page.wait_for_timeout(500)
+            locator.first.scroll_into_view_if_needed(timeout=timeout_ms)
+            locator.first.click(timeout=timeout_ms, force=True)
+            page.wait_for_timeout(300)
             return
         except Exception as exc:  # noqa: BLE001
             last_error = exc
+
+    if not found_any:
+        raise RuntimeError("无法定位“分红年度”输入框/下拉触发器（页面结构可能已变更）。")
     raise RuntimeError(f"无法展开“分红年度”下拉框，最后错误：{last_error}")
 
 
@@ -106,14 +122,21 @@ def FetchDividendYears(target_url: str, timeout_seconds: int) -> list[str]:
     timeout_ms: int = max(timeout_seconds, 5) * 1000
     with sync_playwright() as playwright:
         browser = playwright.chromium.launch(headless=True)
-        page = browser.new_page()
+        page = browser.new_page(
+            user_agent=(
+                "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) "
+                "AppleWebKit/537.36 (KHTML, like Gecko) "
+                "Chrome/124.0.0.0 Safari/537.36"
+            ),
+            locale="zh-CN",
+        )
         try:
             page.goto(target_url, wait_until="domcontentloaded", timeout=timeout_ms)
             page.wait_for_load_state("networkidle", timeout=timeout_ms)
             _OpenYearDropdown(page, timeout_ms)
 
             option_locator = page.locator(
-                "li.el-select-dropdown__item, div.el-select-dropdown__item"
+                "[role='listbox'] [role='option'], li.el-select-dropdown__item, div.el-select-dropdown__item"
             )
             option_locator.first.wait_for(timeout=timeout_ms)
             option_count: int = option_locator.count()
