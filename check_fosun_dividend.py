@@ -39,7 +39,7 @@ def BuildUnpublishedMarkdown(years: list[str]) -> tuple[str, str]:
     # 弱提醒：信息量较少、语气更平缓，避免刷屏焦虑。
     title: str = "⏳ 复星保德信2026年度红利实现率尚未公布"
     markdown_text: str = (
-        "### ⏳ 未公布\n"
+        "### ⏳ 复星保德信2026年度红利实现率尚未公布\n"
         f"- 当前年份选项：`{', '.join(years)}`\n"
         "- 建议：保持关注，后续将自动更新通知。\n"
     )
@@ -51,7 +51,7 @@ def BuildPublishedMarkdown() -> tuple[str, str]:
     # 强提醒：更醒目的标题 + 明确结论 + 附官网入口链接。
     title: str = "✅ 复星保德信2026年度红利实现率已公布"
     markdown_text: str = (
-        "## ✅ 已公布\n"
+        "## ✅ 复星保德信2026年度红利实现率已公布\n"
         "- 已检测到“分红年度”下拉选项包含：`2026`\n"
         f"- 查询入口：[复星保德信官网红利实现率查询页]({TARGET_URL})\n"
         "- 下一步：请尽快查看对应产品的红利实现率披露内容。\n"
